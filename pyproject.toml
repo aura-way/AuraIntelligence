@@ -16,9 +16,8 @@ copyright = "Copyright (C) 2026 AuraWay"
 
 [tool.flet.app]
 path = "."
+module = "main"
 
 [tool.flet.android]
-# pylolm's native libraries must be extracted so that llama.cpp can find its CPU backends.
 legacy_packaging = true
-# pylolm ships arm64 libraries only.
 target_arch = ["arm64-v8a"]
