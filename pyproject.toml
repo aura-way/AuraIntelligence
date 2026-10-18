@@ -15,7 +15,7 @@ company = "AuraWay"
 copyright = "Copyright (C) 2026 AuraWay"
 
 [tool.flet.app]
-path = "src"
+path = "."
 
 [tool.flet.android]
 # pylolm's native libraries must be extracted so that llama.cpp can find its CPU backends.
