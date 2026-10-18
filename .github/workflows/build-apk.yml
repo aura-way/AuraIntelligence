@@ -1,4 +1,4 @@
-name: Test pylolm on Android
+name: Test pylolm Android APK
 
 on:
   workflow_dispatch:
@@ -8,119 +8,62 @@ permissions:
 
 jobs:
   build:
-    name: Build pylolm Test APK
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Get the repository
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      # 2. Verify project files
-      - name: Verify project
-        shell: bash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify project files
         run: |
-          set -e
-
-          echo "Working directory:"
+          set -eux
           pwd
-
-          echo ""
-          echo "Repository files:"
           ls -la
+          test -f main.py
+          test -f pyproject.toml
 
-          test -f main.py || {
-            echo "::error::main.py not found"
-            exit 1
-          }
-
-          test -f pyproject.toml || {
-            echo "::error::pyproject.toml not found"
-            exit 1
-          }
-
-          echo "Project files verified."
-
-      # 3. Display configuration
-      - name: Inspect configuration
-        run: |
-          echo "----- pyproject.toml -----"
-          cat pyproject.toml
-
-      # 4. Check whether pylolm is available on PyPI
-      - name: Check pylolm package availability
-        shell: bash
+      - name: Install project dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install "flet==0.28.3"
 
-          python -m pip index versions pylolm
+      - name: Diagnose Flet CLI
+        run: |
+          python -m pip show flet
+          command -v flet
+          flet --version
 
-      # 5. Build the APK using the official Flet action
-      - name: Build Android APK
-        id: build
-        uses: flet-dev/flet-build-action@v1
-        with:
-          target: apk
-          working-directory: .
-          runner-python-version: "3.12"
-          bundled-python-version: "3.12"
-          build-number: ${{ github.run_number }}
-
-      # 6. Inspect the generated output
-      - name: Inspect build output
-        shell: bash
+      - name: Build APK
         env:
-          BUILD_OUTPUT: ${{ steps.build.outputs.output-path }}
+          FLET_CLI_NO_RICH_OUTPUT: "1"
+        run: |
+          flet build apk --yes --verbose
+
+      - name: Find APK
+        id: apk
         run: |
           set -e
 
-          echo "Build output:"
-          echo "$BUILD_OUTPUT"
-
-          if [ ! -d "$BUILD_OUTPUT" ]; then
-            echo "::error::Build output directory not found."
-            exit 1
-          fi
-
-          find "$BUILD_OUTPUT" -type f -print | head -200
-
-      # 7. Inspect the APK for native libraries
-      - name: Inspect APK native libraries
-        shell: bash
-        env:
-          BUILD_OUTPUT: ${{ steps.build.outputs.output-path }}
-        run: |
-          set -e
-
-          APK="$(find "$BUILD_OUTPUT" -type f -name '*.apk' -print -quit)"
+          APK="$(find build -type f -name '*.apk' -print -quit)"
 
           if [ -z "$APK" ]; then
-            echo "::error::No APK found in build output."
+            echo "::error::APK not found."
             exit 1
           fi
 
-          echo "APK: $APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
           ls -lh "$APK"
 
-          echo ""
-          echo "Checking APK for native libraries..."
-
-          unzip -l "$APK" |
-            grep -E 'lib(llama|ggml|pylolm)[^/]*\.so|lib/[^/]+/.*\.so' \
-            || true
-
-          echo ""
-          echo "Checking Python package files..."
-
-          unzip -l "$APK" |
-            grep -i 'pylolm' \
-            || true
-
-      # 8. Upload the build archive
-      - name: Upload build archive
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pylolm-android-test
-          path: ${{ steps.build.outputs.archive-path }}
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 7
