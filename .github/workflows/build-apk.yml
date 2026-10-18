@@ -1,0 +1,31 @@
+name: Build Flet demo APK
+
+# Run manually: GitHub -> Actions -> "Build Flet demo APK" -> Run workflow.
+# Needs pylolm >= 0.1.5 to be published on PyPI first (the app installs it from there).
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install flet
+      - name: Build the APK
+        working-directory: examples/flet_chat
+        env:
+          FLET_CLI_NO_RICH_OUTPUT: "1"
+        run: flet build apk --yes --verbose
+      - name: List what ended up in the APK (pylolm libraries)
+        run: |
+          APK="$(ls examples/flet_chat/build/apk/*.apk | head -n1)"
+          echo "$APK"; ls -lh "$APK"
+          unzip -l "$APK" | grep -E "libllama|libggml|libpylolm" || echo "!! pylolm libraries not found in the APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aura-intelligence-demo-apk
+          path: examples/flet_chat/build/apk/*.apk
+          
