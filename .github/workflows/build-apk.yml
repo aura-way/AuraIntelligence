@@ -1,4 +1,4 @@
-name: Build AuraIntelligence Demo APK
+name: Build AuraIntelligence APK
 
 on:
   workflow_dispatch:
@@ -7,43 +7,39 @@ permissions:
   contents: read
 
 jobs:
-  apk:
+  build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Download the repository
+      # 1. Download the GitHub repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install Python
+      # 2. Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      # 3. Locate the Flet application
-      - name: Find Flet application
-        id: app
-        shell: bash
+      # 3. Verify project files
+      - name: Verify project structure
         run: |
-          set -e
+          echo "Checking project files..."
 
-          echo "Repository structure:"
-          find . -maxdepth 4 -type f \
-            ! -path "./.git/*" | sort | head -200
-
-          if [ -f "examples/flet_chat/main.py" ]; then
-            APP_DIR="examples/flet_chat"
-          elif [ -f "main.py" ]; then
-            APP_DIR="."
-          else
-            echo "::error::Cannot find main.py at the repository root or examples/flet_chat/main.py."
-            echo "Update this workflow to match your actual Flet app directory."
+          test -f main.py || {
+            echo "ERROR: main.py not found!"
             exit 1
-          fi
+          }
 
-          echo "Application directory: $APP_DIR"
-          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+          test -f pyproject.toml || {
+            echo "ERROR: pyproject.toml not found!"
+            exit 1
+          }
+
+          echo "Project files found."
+          ls -la
 
       # 4. Install Flet
       - name: Install Flet
@@ -51,72 +47,54 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install flet
 
-      # 5. Install application dependencies
-      - name: Install application dependencies
-        shell: bash
-        run: |
-          APP_DIR="${{ steps.app.outputs.app_dir }}"
-
-          if [ -f "$APP_DIR/requirements.txt" ]; then
-            python -m pip install -r "$APP_DIR/requirements.txt"
-          fi
-
-      # 6. Build Android APK
+      # 5. Build the APK
       - name: Build APK
-        working-directory: ${{ steps.app.outputs.app_dir }}
         env:
           FLET_CLI_NO_RICH_OUTPUT: "1"
         run: |
           flet build apk --yes --verbose
 
-      # 7. Find and verify APK
+      # 6. Locate and verify APK
       - name: Verify APK
-        id: verify
+        id: apk
         shell: bash
         run: |
           set -e
 
-          APP_DIR="${{ steps.app.outputs.app_dir }}"
-
-          APK="$(find "$APP_DIR/build" -type f -name '*.apk' \
-            -print -quit 2>/dev/null || true)"
+          APK="$(find build -type f -name '*.apk' -print -quit 2>/dev/null || true)"
 
           if [ -z "$APK" ]; then
-            echo "::error::APK was not generated."
-            find "$APP_DIR/build" -maxdepth 5 -type f 2>/dev/null || true
+            echo "ERROR: APK was not generated."
+            echo "Build directory contents:"
+            find build -maxdepth 5 -type f 2>/dev/null || true
             exit 1
           fi
 
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-          echo "APK generated successfully:"
+          echo "APK successfully generated:"
           ls -lh "$APK"
 
-      # 8. Check for pylolm native libraries
-      - name: Inspect APK native libraries
+      # 7. Inspect pylolm native libraries
+      - name: Inspect APK
         shell: bash
         run: |
-          set +e
+          APK="${{ steps.apk.outputs.path }}"
 
-          echo "Checking APK contents..."
+          echo "Checking for pylolm native libraries..."
 
-          unzip -l "$APK_PATH" |
-            grep -E 'libllama|libggml|libpylolm' 
-
-          RESULT=$?
-
-          if [ "$RESULT" -ne 0 ]; then
-            echo "WARNING: Expected pylolm native libraries were not found."
-            echo "The APK exists, but native integration is not verified."
+          if unzip -l "$APK" | grep -E 'libllama|libggml|libpylolm'; then
+            echo "Native library files detected."
+          else
+            echo "WARNING: pylolm native libraries were not detected."
+            echo "The APK build succeeded, but pylolm integration is unverified."
           fi
 
-          exit 0
-
-      # 9. Upload APK
+      # 8. Upload the APK
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aura-intelligence-demo-apk
-          path: ${{ env.APK_PATH }}
+          name: AuraIntelligence-APK
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 7
