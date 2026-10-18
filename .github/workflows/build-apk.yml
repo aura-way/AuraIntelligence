@@ -43,7 +43,7 @@ jobs:
         env:
           FLET_CLI_NO_RICH_OUTPUT: "1"
         run: |
-          flet build apk --yes --verbose
+          flet build apk --Y --verbose
 
       - name: Find APK
         id: apk
