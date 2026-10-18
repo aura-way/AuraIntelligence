@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Download the GitHub repository
+      # 1. Check out the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -21,76 +21,131 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       # 3. Verify project files
       - name: Verify project structure
+        shell: bash
         run: |
-          echo "Checking project files..."
+          set -e
 
-          test -f main.py || {
-            echo "ERROR: main.py not found!"
-            exit 1
-          }
+          echo "Current directory:"
+          pwd
 
-          test -f pyproject.toml || {
-            echo "ERROR: pyproject.toml not found!"
-            exit 1
-          }
-
-          echo "Project files found."
+          echo ""
+          echo "Repository contents:"
           ls -la
 
-      # 4. Install Flet
+          echo ""
+          echo "Checking main.py..."
+
+          if [ ! -f main.py ]; then
+            echo "::error::main.py is missing from the repository root."
+            exit 1
+          fi
+
+          echo "main.py exists."
+
+          echo ""
+          echo "Checking pyproject.toml..."
+
+          if [ ! -f pyproject.toml ]; then
+            echo "::error::pyproject.toml is missing."
+            exit 1
+          fi
+
+          echo "pyproject.toml exists."
+
+          echo ""
+          echo "Python version:"
+          python --version
+
+      # 4. Display project configuration
+      - name: Inspect project configuration
+        run: |
+          echo "Contents of pyproject.toml:"
+          cat pyproject.toml
+
+      # 5. Install Flet
       - name: Install Flet
         run: |
           python -m pip install --upgrade pip
           python -m pip install flet
 
-      # 5. Build the APK
+          echo ""
+          echo "Installed Flet version:"
+          flet --version
+
+      # 6. Verify Flet entry point
+      - name: Verify Flet entry point
+        shell: bash
+        run: |
+          set -e
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path = Path("main.py")
+
+          if not path.is_file():
+              raise SystemExit("ERROR: main.py does not exist.")
+
+          source = path.read_text(encoding="utf-8")
+          ast.parse(source)
+
+          print("SUCCESS: main.py exists and contains valid Python syntax.")
+          PY
+
+      # 7. Build the Android APK
       - name: Build APK
         env:
           FLET_CLI_NO_RICH_OUTPUT: "1"
         run: |
-          flet build apk --yes --verbose
+          flet build apk --yes --verbose --module-name main
 
-      # 6. Locate and verify APK
-      - name: Verify APK
+      # 8. Find and verify the generated APK
+      - name: Verify generated APK
         id: apk
         shell: bash
         run: |
           set -e
 
+          echo "Searching for generated APK..."
+
           APK="$(find build -type f -name '*.apk' -print -quit 2>/dev/null || true)"
 
           if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
+            echo "::error::APK was not generated."
+
             echo "Build directory contents:"
-            find build -maxdepth 5 -type f 2>/dev/null || true
+            find build -maxdepth 6 -type f 2>/dev/null || true
+
             exit 1
           fi
 
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-          echo "APK successfully generated:"
+          echo ""
+          echo "APK generated successfully!"
           ls -lh "$APK"
 
-      # 7. Inspect pylolm native libraries
-      - name: Inspect APK
+      # 9. Inspect pylolm native libraries
+      - name: Inspect pylolm libraries
         shell: bash
         run: |
-          APK="${{ steps.apk.outputs.path }}"
+          echo "Inspecting APK contents..."
 
-          echo "Checking for pylolm native libraries..."
-
-          if unzip -l "$APK" | grep -E 'libllama|libggml|libpylolm'; then
-            echo "Native library files detected."
+          if unzip -l "$APK_PATH" | grep -E 'libllama|libggml|libpylolm'; then
+            echo ""
+            echo "Potential pylolm native libraries detected."
           else
+            echo ""
             echo "WARNING: pylolm native libraries were not detected."
-            echo "The APK build succeeded, but pylolm integration is unverified."
+            echo "APK generation succeeded, but native integration is unverified."
           fi
 
-      # 8. Upload the APK
+      # 10. Upload the APK
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
