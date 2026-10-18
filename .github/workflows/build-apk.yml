@@ -1,43 +1,48 @@
-name: Test pylolm Android APK
+name: Build AuraIntelligence APK
 
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+    paths:
+      - "main.py"
+      - "pyproject.toml"
+      - "pylolm/**"
+      - ".github/workflows/build-apk.yaml"
+
 permissions:
   contents: read
 
+concurrency:
+  group: aurai-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install flet
-          
-      - name: Check Flet version
-        run: |
-          python -m pip show flet
-          flet --version
+        uses: actions/checkout@v6
 
       - name: Build APK
-        env:
-          FLET_CLI_NO_RICH_OUTPUT: "1"
-        run: |
-          flet build apk --yes --verbose
+        id: build
+        uses: flet-dev/flet-build-action@v1
+        with:
+          target: apk
+          runner-python-version: "3.12"
+          bundled-python-version: "3.12"
+          build-number: ${{ github.run_number }}
+          cache: true
 
-      - name: Upload APK
+      - name: Upload APK build
         uses: actions/upload-artifact@v4
         with:
-          name: pylolm-android-test
-          path: build/apk/*.apk
+          name: AuraIntelligence-APK-${{ github.run_number }}
+          path: ${{ steps.build.outputs.output-path }}/**/*.apk
           if-no-files-found: error
+          retention-days: 1
