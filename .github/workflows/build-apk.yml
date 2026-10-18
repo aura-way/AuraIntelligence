@@ -1,31 +1,122 @@
-name: Build Flet demo APK
+name: Build AuraIntelligence Demo APK
 
-# Run manually: GitHub -> Actions -> "Build Flet demo APK" -> Run workflow.
-# Needs pylolm >= 0.1.5 to be published on PyPI first (the app installs it from there).
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   apk:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # 1. Download the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install flet
-      - name: Build the APK
-        working-directory: examples/flet_chat
+
+      # 3. Locate the Flet application
+      - name: Find Flet application
+        id: app
+        shell: bash
+        run: |
+          set -e
+
+          echo "Repository structure:"
+          find . -maxdepth 4 -type f \
+            ! -path "./.git/*" | sort | head -200
+
+          if [ -f "examples/flet_chat/main.py" ]; then
+            APP_DIR="examples/flet_chat"
+          elif [ -f "main.py" ]; then
+            APP_DIR="."
+          else
+            echo "::error::Cannot find main.py at the repository root or examples/flet_chat/main.py."
+            echo "Update this workflow to match your actual Flet app directory."
+            exit 1
+          fi
+
+          echo "Application directory: $APP_DIR"
+          echo "app_dir=$APP_DIR" >> "$GITHUB_OUTPUT"
+
+      # 4. Install Flet
+      - name: Install Flet
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install flet
+
+      # 5. Install application dependencies
+      - name: Install application dependencies
+        shell: bash
+        run: |
+          APP_DIR="${{ steps.app.outputs.app_dir }}"
+
+          if [ -f "$APP_DIR/requirements.txt" ]; then
+            python -m pip install -r "$APP_DIR/requirements.txt"
+          fi
+
+      # 6. Build Android APK
+      - name: Build APK
+        working-directory: ${{ steps.app.outputs.app_dir }}
         env:
           FLET_CLI_NO_RICH_OUTPUT: "1"
-        run: flet build apk --yes --verbose
-      - name: List what ended up in the APK (pylolm libraries)
         run: |
-          APK="$(ls examples/flet_chat/build/apk/*.apk | head -n1)"
-          echo "$APK"; ls -lh "$APK"
-          unzip -l "$APK" | grep -E "libllama|libggml|libpylolm" || echo "!! pylolm libraries not found in the APK"
-      - uses: actions/upload-artifact@v4
+          flet build apk --yes --verbose
+
+      # 7. Find and verify APK
+      - name: Verify APK
+        id: verify
+        shell: bash
+        run: |
+          set -e
+
+          APP_DIR="${{ steps.app.outputs.app_dir }}"
+
+          APK="$(find "$APP_DIR/build" -type f -name '*.apk' \
+            -print -quit 2>/dev/null || true)"
+
+          if [ -z "$APK" ]; then
+            echo "::error::APK was not generated."
+            find "$APP_DIR/build" -maxdepth 5 -type f 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+          echo "APK generated successfully:"
+          ls -lh "$APK"
+
+      # 8. Check for pylolm native libraries
+      - name: Inspect APK native libraries
+        shell: bash
+        run: |
+          set +e
+
+          echo "Checking APK contents..."
+
+          unzip -l "$APK_PATH" |
+            grep -E 'libllama|libggml|libpylolm' 
+
+          RESULT=$?
+
+          if [ "$RESULT" -ne 0 ]; then
+            echo "WARNING: Expected pylolm native libraries were not found."
+            echo "The APK exists, but native integration is not verified."
+          fi
+
+          exit 0
+
+      # 9. Upload APK
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
           name: aura-intelligence-demo-apk
-          path: examples/flet_chat/build/apk/*.apk
-          
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+          retention-days: 7
