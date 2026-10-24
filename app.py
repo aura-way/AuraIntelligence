@@ -231,6 +231,12 @@ def new_chat(e, chats, intro):
 
 def send(e, page, inp, intro, chats):
     global llm, history
+
+    # If generation is running, stop it.
+    if getattr(llm, "_generating", False):
+        llm.stop()
+        return
+
     user_text = (inp.value or "").strip()
     if not user_text:
         return
@@ -240,35 +246,61 @@ def send(e, page, inp, intro, chats):
         page.update()
         return
 
-    # Capture and clear the input before generation begins.
+    # Mark generation as active.
+    llm._generating = True
+
+    send_button = e.control
+    send_button.icon = ft.Icons.STOP
+
     inp.value = ""
     intro.visible = False
+
     query = Query(body=user_text)
     answer = Ans(body="Thinking…")
-    chats.controls.append(query)
-    chats.controls.append(answer)
+
+    chats.controls.extend([query, answer])
     history.append({"role": "user", "content": user_text})
     page.update()
 
     try:
         answer.body = ""
+
         for chunk in llm.create_chat_completion(
             messages=history,
             max_tokens=512,
             stream=True,
         ):
-            token = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
+            if not llm._generating:
+                break
+
+            token = (
+                chunk.get("choices", [{}])[0]
+                .get("delta", {})
+                .get("content")
+            )
+
             if token:
                 answer.body += str(token)
                 answer.change_text(answer.body)
                 page.update()
 
-        history.append({"role": "assistant", "content": answer.body})
-        if not answer.body:
-            answer.change_text("The model returned an empty response. Try again.")
+        if answer.body:
+            history.append({
+                "role": "assistant",
+                "content": answer.body,
+            })
+        else:
+            answer.change_text("Generation stopped.")
             page.update()
+
     except Exception as exc:
         print(f"Generation error: {exc}")
-        answer.change_text("Sorry, an error occurred while generating the response.")
+        answer.change_text(
+            "Sorry, an error occurred while generating the response."
+        )
         page.update()
-                  
+
+    finally:
+        llm._generating = False
+        send_button.icon = ft.Icons.SEND
+        page.update()
