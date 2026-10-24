@@ -1,255 +1,317 @@
-"""AuraIntelligence demo: offline streaming chat with pylolm inside a Flet app.
-
-Flow: tap "Choose model" -> pick a .gguf file -> chat. Generation runs on a worker thread and
-text is streamed into the UI; "Stop" cancels it.
-"""
-
 import asyncio
 import os
-import platform
-import time
-
 import flet as ft
-
-# Palette: dark navy + cyan.
-BG = "#0B1220"
-SURFACE = "#111B2E"
-USER_BUBBLE = "#0E7490"
-BOT_BUBBLE = "#16233B"
-CYAN = "#22D3EE"
-MUTED = "#8FA3BF"
-DANGER = "#F87171"
-
-SYSTEM_PROMPT = (
-    "You are AuraIntelligence, a helpful offline assistant. Reply in the same language the user "
-    "writes in. Keep answers short and in plain text, without markdown or formulas."
-)
-HISTORY_LIMIT = 12  # most recent messages sent to the model
-UI_REFRESH_SECONDS = 0.08  # how often streamed text is pushed to the screen
-
-
-def diagnostics() -> str:
-    lines = [
-        "python %s on %s" % (platform.python_version(), platform.machine()),
-        "ANDROID_NATIVE_LIBRARY_DIR=%s" % os.environ.get("ANDROID_NATIVE_LIBRARY_DIR"),
-    ]
-    try:
-        from pylolm import __version__, _lib
-
-        _lib.load()
-        where = _lib.loaded_dir() or "system library path"
-        lines.append("pylolm %s: native libraries OK (%s)" % (__version__, where))
-    except Exception as exc:  # show anything that goes wrong instead of crashing the app
-        lines.append("pylolm native libraries: FAILED\n%s" % exc)
-    return "\n".join(lines)
-
+import app
+import threading
 
 async def main(page: ft.Page):
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE_900)
+    page.scroll = ft.ScrollMode.AUTO
     page.title = "AuraIntelligence"
-    page.theme_mode = ft.ThemeMode.DARK
-    page.bgcolor = BG
-    page.padding = 0
+    page.padding = 10
 
-    state = {"llm": None, "busy": False, "history": []}
+    storage = ft.SharedPreferences()
+    theme = await storage.get("theme_mode") or "SYSTEM"
+    page.theme_mode = theme
+    system_message = await storage.get("sys_message") or ""
 
-    status = ft.Text("Choose a model (.gguf) to begin.", size=13, color=MUTED)
-    progress = ft.ProgressBar(visible=False, color=CYAN)
-    chat = ft.ListView(expand=True, spacing=10, auto_scroll=True, padding=16)
-    box = ft.TextField(
-        hint_text="Type a message",
-        expand=True,
-        multiline=True,
-        min_lines=1,
-        max_lines=4,
-        border_radius=28,
-        filled=True,
-        bgcolor=SURFACE,
-        border_color=SURFACE,
-        focused_border_color=CYAN,
-        content_padding=16,
-    )
+    async def show_drawer(e=None):
+        await page.show_drawer()
 
-    def add_bubble(text: str, mine: bool, color: str = None):
-        label = ft.Text(text, selectable=True, size=16, color=color)
-        bubble = ft.Container(
-            content=label,
-            padding=14,
-            border_radius=24,
-            bgcolor=USER_BUBBLE if mine else BOT_BUBBLE,
-        )
-        row = ft.Row(
-            controls=[bubble],
-            alignment=ft.MainAxisAlignment.END if mine else ft.MainAxisAlignment.START,
-        )
-        chat.controls.append(row)
-        page.update()
-        return label
-
-    def set_status(message: str, error: bool = False):
-        status.value = message
-        status.color = DANGER if error else MUTED
-        page.update()
-
-    def set_busy(busy: bool):
-        state["busy"] = busy
-        send_button.disabled = busy
-        stop_button.visible = busy
-        progress.visible = busy
-        page.update()
-
-    async def load_model(path: str):
-        set_status("Loading model...")
-        progress.visible = True
-        page.update()
-        old = state["llm"]
-        state["llm"] = None
-        if old is not None:
-            old.close()
-        try:
-            from pylolm import Llama
-
-            # Loading blocks for several seconds, so keep it off the UI thread.
-            llm = await asyncio.to_thread(Llama, path, n_ctx=2048)
-        except Exception as exc:
-            progress.visible = False
-            set_status("Could not load the model:\n%s" % exc, error=True)
-            return
-        progress.visible = False
-        state["llm"] = llm
-        state["history"] = []
-        set_status("Ready: %s" % os.path.basename(path))
-
-    async def pick_model(e):
-        files = await ft.FilePicker().pick_files(allow_multiple=False)
-        if not files:
-            return
-        path = files[0].path
-        if not path:
-            set_status("The file picker did not return a file path.", error=True)
-            return
-        await load_model(path)
-
-    async def send(e):
-        llm = state["llm"]
-        if llm is None:
-            set_status("Choose a model first.", error=True)
-            return
-        text = (box.value or "").strip()
-        if state["busy"] or not text:
-            return
-        box.value = ""
-        history = state["history"]
-        history.append({"role": "user", "content": text})
-        add_bubble(text, mine=True)
-        reply_label = add_bubble("...", mine=False)
-        set_busy(True)
-
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-        done = object()
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history[-HISTORY_LIMIT:]
-
-        def worker():
-            try:
-                for chunk in llm.create_chat_completion(
-                    messages, stream=True, max_tokens=768, temperature=0.7
-                ):
-                    piece = chunk["choices"][0]["delta"].get("content")
-                    if piece:
-                        loop.call_soon_threadsafe(queue.put_nowait, piece)
-            except Exception as exc:
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, done)
-
-        future = loop.run_in_executor(None, worker)
-        parts = []
-        error = None
-        last_refresh = 0.0
-        while True:
-            item = await queue.get()
-            if item is done:
-                break
-            if isinstance(item, Exception):
-                error = item
-                continue
-            parts.append(item)
-            now = time.monotonic()
-            if now - last_refresh >= UI_REFRESH_SECONDS:
-                reply_label.value = "".join(parts)
-                page.update()
-                last_refresh = now
-        await future
-
-        reply = "".join(parts)
-        if error is not None:
-            reply_label.value = (reply + "\n\n" if reply else "") + "Error: %s" % error
-            reply_label.color = DANGER
-            if type(error).__name__ == "ContextOverflowError":
-                state["history"] = history[-1:]  # conversation too long: start fresh
+    async def drawer_click(e: ft.Event[ft.NavigationDrawer]):
+        await page.close_drawer()
+        if e.control.selected_index == 0:
+            app.change_page(e, sett_page, chat_page, bottom_cont, page, chat_page)
         else:
-            reply_label.value = reply or "(no reply)"
-            history.append({"role": "assistant", "content": reply})
-        set_busy(False)
+            app.change_page(e, chat_page, sett_page, bottom_cont, page, chat_page)
 
-    def stop(e):
-        if state["llm"] is not None:
-            state["llm"].stop()
+    async def theme_change(e):
+        page.theme_mode = e.control.value
+        await storage.set("theme_mode", e.control.value)
+        page.update()
 
-    def show_diagnostics(e):
-        add_bubble(diagnostics(), mine=False, color=MUTED)
+    async def open_link(e, link):
+        await ft.UrlLauncher().launch_url(link)
 
-    send_button = ft.IconButton(
-        icon=ft.Icons.SEND, icon_color=BG, bgcolor=CYAN, icon_size=26, on_click=send
+    page.drawer = ft.NavigationDrawer(
+        on_change=drawer_click,
+        width=250,
+        controls=[
+            ft.Container(
+                content=ft.Text("AuraIntelligence", size=25, weight=ft.FontWeight.W_100, italic=True),
+                padding=20,
+            ),
+            ft.NavigationDrawerDestination(label="Chat", icon=ft.Icons.CHAT),
+            ft.NavigationDrawerDestination(label="Settings", icon=ft.Icons.SETTINGS),
+        ],
     )
-    stop_button = ft.IconButton(
-        icon=ft.Icons.STOP, icon_color=BG, bgcolor=DANGER, icon_size=26, on_click=stop, visible=False
-    )
 
-    header = ft.Container(
-        padding=16,
-        bgcolor=SURFACE,
-        border_radius=28,
-        content=ft.Column(
-            spacing=6,
-            controls=[
-                ft.Text("AuraIntelligence", size=22, weight=ft.FontWeight.W_600, color=CYAN),
-                status,
-                ft.Row(
-                    controls=[
-                        ft.Button(content="Choose model", icon=ft.Icons.FOLDER_OPEN, on_click=pick_model),
-                        ft.Button(content="Diagnostics", icon=ft.Icons.INFO_OUTLINE, on_click=show_diagnostics),
-                    ],
-                    wrap=True,
-                ),
-            ],
+    gen_sett = ft.BottomSheet(
+        fullscreen=True,
+        show_drag_handle=True,
+        content=ft.Container(
+            padding=20,
+            content=ft.Column(
+                controls=[
+                    ft.Text("Generation Settings", size=25, weight=ft.FontWeight.BOLD),
+                    ft.Column(
+                        controls=[
+                            ft.Text("Creativity", size=20),
+                            ft.Text("Choose how creative AI will be.", color=ft.Colors.SECONDARY),
+                            ft.SegmentedButton(
+                                selected=["normal"],
+                                segments=[
+                                    ft.Segment(value="creative", label="Creative"),
+                                    ft.Segment(value="normal", label="Normal"),
+                                    ft.Segment(value="predictable", label="Predictable"),
+                                ],
+                                allow_empty_selection=False,
+                            ),
+                        ],
+                        spacing=2,
+                    ),
+                ]
+            ),
         ),
     )
 
-    page.add(
-        ft.SafeArea(
-            expand=True,
-            content=ft.Column(
-                expand=True,
-                spacing=0,
-                controls=[
-                    header,
-                    progress,
-                    chat,
-                    ft.Container(
-                        padding=12,
-                        content=ft.Row(controls=[box, send_button, stop_button], spacing=8),
-                    ),
+    page.appbar = ft.AppBar(
+        leading=ft.IconButton(ft.Icons.MENU, on_click=show_drawer),
+        title_spacing=0,
+        visible=False,
+        force_material_transparency=True,
+        actions=[
+            new_chat_butt := ft.Button("New Chat", icon=ft.Icons.ADD),
+            ft.PopupMenuButton(
+                key="popup",
+                items=[
+                    ft.PopupMenuItem(
+                        content=ft.Row(
+                            controls=[ft.Icon(ft.Icons.AUTO_AWESOME), ft.Text("Generation Settings")]
+                        ),
+                        on_click=lambda e: page.show_dialog(gen_sett),
+                    )
                 ],
             ),
+        ],
+    )
+
+    download_text = ft.Text("Waiting to start", size=15)
+    download_prog = ft.ProgressBar(height=20, border_radius=30, value=0)
+    status_text = ft.Text("Download the AI model to get started.", size=16, selectable=True)
+    download_button = ft.OutlinedButton(
+        "Download",
+        icon=ft.Icons.DOWNLOAD,
+        on_click=lambda e: page.run_task(
+            app.download_model,
+            download_prog,
+            download_text,
+            status_text,
+            download_button,
+            download_page,
+            chat_page,
+            bottom_cont,
+            page,
+        ),
+    )
+
+    
+    download_page = ft.Container(
+        content=ft.Card(
+            content=ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Row(controls=[ft.Icon(ft.Icons.DOWNLOAD), ft.Text("Download AI model", size=30, weight=ft.FontWeight.BOLD)]),
+                        status_text,
+                        ft.Divider(),
+                        download_text,
+                        download_prog,
+                        download_button,
+                    ],
+                    spacing=10,
+                ),
+                padding=20,
+            )
+        ),
+        alignment=ft.Alignment.CENTER,
+        expand=True,
+    )
+
+    intro = ft.Container(
+        content=ft.Column(
+            controls=[
+                ft.Image(src="assets/icon.png", width=90, height=90, fit=ft.BoxFit.CONTAIN),
+                ft.Text("Feel the Aura", size=32, weight=ft.FontWeight.W_300, italic=True),
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=10,
+        ),
+        alignment=ft.Alignment.CENTER,
+        expand=True,
+    )
+    chats = ft.Column(
+        controls=[intro],
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+        spacing=15,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+    )
+
+    def intro_invisible():
+        intro.visible = False
+
+    def check_chats():
+        if len(chats.controls) <= 1:
+            intro.visible = True
+
+    def send_message(e):
+        # Use Flet's thread helper to run blocking model generation off the UI loop.
+        page.run_thread(app.send, e, page, inp, intro, chats)
+
+    bottom_cont_row = ft.Row(
+        controls=[
+            inp := ft.TextField(
+                hint_text="Ask anything",
+                multiline=True,
+                min_lines=1,
+                max_lines=3,
+                expand=True,
+                on_focus=lambda e: intro_invisible(),
+                on_blur=lambda e: check_chats(),
+                on_change=lambda e: intro_invisible(),
+                border_color=ft.Colors.SECONDARY,
+                filled=True,
+                border_radius=20,
+            ),
+            ft.FilledIconButton(ft.Icons.SEND, on_click=send_message),
+        ],
+        spacing=0,
+        alignment=ft.MainAxisAlignment.CENTER,
+        vertical_alignment=ft.CrossAxisAlignment.END,
+    )
+    bottom_cont = ft.Container(
+        content=bottom_cont_row,
+        left=12,
+        right=12,
+        bottom=12,
+        padding=8,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        border_radius=30,
+        visible=False,
+    )
+    page.overlay.append(bottom_cont)
+    new_chat_butt.on_click = lambda e: app.new_chat(e, chats, intro)
+
+    chat_page = ft.Container(
+        content=ft.Column(
+            controls=[ft.Container(content=chats, expand=True, padding=ft.Padding(10, 10, 10, 100))],
+            spacing=0,
+            expand=True,
+        ),
+        expand=True,
+        visible=False,
+        padding=0,
+    )
+
+    theme_card = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(controls=[ft.Icon(ft.Icons.DARK_MODE), ft.Text("Theme", size=30)]),
+                    ft.Dropdown(
+                        value=theme,
+                        on_select=theme_change,
+                        options=[ft.dropdown.Option("SYSTEM"), ft.dropdown.Option("LIGHT"), ft.dropdown.Option("DARK")],
+                        border_color=ft.Colors.SECONDARY,
+                        border_radius=20,
+                    ),
+                ]
+            ),
+            padding=20,
         )
     )
 
-    # Tell the user right away if the native libraries are missing.
-    report = diagnostics()
-    if "FAILED" in report:
-        add_bubble(report, mine=False, color=DANGER)
+    async def change_sys_message(e):
+        value = sys_message.value or ""
+        await storage.set("sys_message", value)
+        app.SYSTEM_MESSAGE = value.strip() or "You are AuraIntelligence, a helpful assistant."
+        app.reset_history()
+        status_saved.value = "System message saved. It will apply to new responses."
+        page.update()
+
+    sys_message = ft.TextField(
+        hint_text="Tell the AI how to respond or what context to use.",
+        multiline=True,
+        max_lines=4,
+        border_color=ft.Colors.SECONDARY,
+        border_radius=20,
+        value=system_message,
+    )
+    status_saved = ft.Text(size=13, color=ft.Colors.SECONDARY)
+    message_card = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(controls=[ft.Icon(ft.Icons.MEMORY), ft.Text("System Message", size=30)]),
+                    sys_message,
+                    ft.OutlinedButton("Save", icon=ft.Icons.SAVE, on_click=change_sys_message),
+                    status_saved,
+                ]
+            ),
+            padding=20,
+        )
+    )
+    app.SYSTEM_MESSAGE = system_message.strip() or "You are AuraIntelligence, a helpful assistant."
+    app.reset_history()
+
+    about_card = ft.Card(
+        content=ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(controls=[ft.Icon(ft.Icons.INFO), ft.Text("About", size=30)]),
+                    ft.Markdown(
+                        "**Version:** 0.1.0\n\n**Contact and Feedback:** auraway.dev@gmail.com\n\n© 2026 [AuraWay](https://aura-way.github.io)",
+                        selectable=True,
+                        on_tap_link=lambda e: page.run_task(open_link, e, e.data),
+                    ),
+                ]
+            ),
+            padding=20,
+        )
+    )
+    sett_page = ft.Container(
+        content=ft.Column(controls=[theme_card, message_card, about_card]),
+        visible=False,
+    )
+
+    # Add pages before attempting model load so the UI can still be displayed if loading fails.
+    page.add(download_page, chat_page, sett_page)
+    try:
+        if os.path.isfile(app.MODEL_PATH) and os.path.getsize(app.MODEL_PATH) > 0:
+            status_text.value = "Model found. Loading…"
+            page.update()
+            await asyncio.to_thread(app.load_model, app.MODEL_PATH)
+            download_page.visible = False
+            chat_page.visible = True
+            bottom_cont.visible = True
+            page.appbar.visible = True
+            status_text.value = "Model ready."
+        else:
+            download_page.visible = True
+            chat_page.visible = False
+            bottom_cont.visible = False
+    except Exception as exc:
+        print(f"Existing model could not be loaded: {exc}")
+        status_text.value = f"The existing model could not be loaded: {exc}. Download it again."
+        download_page.visible = True
+        chat_page.visible = False
+        bottom_cont.visible = False
+        download_button.disabled = False
+    page.update()
 
 
-ft.run(main)
-        
+if __name__ == "__main__":
+    ft.run(main)
+    
