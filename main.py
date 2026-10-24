@@ -225,7 +225,7 @@ async def main(page: ft.Page):
                         on_select=theme_change,
                         options=[ft.dropdown.Option("SYSTEM"), ft.dropdown.Option("LIGHT"), ft.dropdown.Option("DARK")],
                         border_color=ft.Colors.SECONDARY,
-                        
+
                     ),
                 ]
             ),
