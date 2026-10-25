@@ -1,11 +1,13 @@
 [project]
-name = "aura-intelligence-demo"
+name = "aura-intelligence"
 version = "0.1.0"
 description = "Offline AI chat demo: Flet + pylolm"
 requires-python = ">=3.12"
 dependencies = [
     "flet",
     "pylolm>=0.1.5",
+    "requests",
+    "flet-spinkit",
 ]
 
 [tool.flet]
@@ -21,3 +23,19 @@ module = "main"
 [tool.flet.android]
 legacy_packaging = true
 target_arch = ["arm64-v8a"]
+
+[tool.flet.boot_screen]
+name = "spinkit"
+
+[tool.flet.boot_screen.spinkit]
+spinner = "Wave"
+spinner_color_light = "#0BC3E6"
+spinner_color_dark = "#0BC3E6"
+spinner_size = 65
+bgcolor_light = "#FFFFFF"
+bgcolor_dark = "#000000"
+text_color_light = "#1565C0"
+text_color_dark = "#0BC3E6"
+prepare_message = "Preparing AuraIntelligence..."
+startup_message = "Awakening AuraIntelligence..."
+fade_out_duration = 350
