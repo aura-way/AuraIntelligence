@@ -2,107 +2,51 @@ import asyncio
 import os
 import flet as ft
 import app
-
+import threading
+import flet_spinkit as spins
 
 async def main(page: ft.Page):
-    # ==================================================
-    # PAGE CONFIGURATION
-    # ==================================================
-
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.theme = ft.Theme(color_scheme_seed=ft.Colors.BLUE_900)
+    page.scroll = ft.ScrollMode.AUTO
     page.title = "AuraIntelligence"
     page.padding = 10
-    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.theme = ft.Theme(
-        color_scheme_seed=ft.Colors.BLUE_900
-    )
-    page.scroll = ft.ScrollMode.AUTO
-
-    # ==================================================
-    # LOCAL STORAGE
-    # ==================================================
 
     storage = ft.SharedPreferences()
-
     theme = await storage.get("theme_mode") or "SYSTEM"
-    system_message = await storage.get("sys_message") or ""
-
     page.theme_mode = theme
-
-    # ==================================================
-    # PAGE NAVIGATION
-    # ==================================================
+    system_message = await storage.get("sys_message") or ""
 
     async def show_drawer(e=None):
         await page.show_drawer()
 
     async def drawer_click(e: ft.Event[ft.NavigationDrawer]):
         await page.close_drawer()
-
         if e.control.selected_index == 0:
-            app.change_page(
-                e,
-                sett_page,
-                chat_page,
-                bottom_cont,
-                page,
-                chat_page,
-            )
+            app.change_page(e, sett_page, chat_page, bottom_cont, page, chat_page)
         else:
-            app.change_page(
-                e,
-                chat_page,
-                sett_page,
-                bottom_cont,
-                page,
-                chat_page,
-            )
+            app.change_page(e, chat_page, sett_page, bottom_cont, page, chat_page)
 
     async def theme_change(e):
         page.theme_mode = e.control.value
-
-        await storage.set(
-            "theme_mode",
-            e.control.value,
-        )
-
+        await storage.set("theme_mode", e.control.value)
         page.update()
 
     async def open_link(e, link):
         await ft.UrlLauncher().launch_url(link)
-
-    # ==================================================
-    # NAVIGATION DRAWER
-    # ==================================================
 
     page.drawer = ft.NavigationDrawer(
         on_change=drawer_click,
         width=250,
         controls=[
             ft.Container(
-                content=ft.Text(
-                    "AuraIntelligence",
-                    size=25,
-                    weight=ft.FontWeight.W_100,
-                    italic=True,
-                ),
+                content=ft.Text("AuraIntelligence", size=20, weight=ft.FontWeight.W_100, italic=True),
                 padding=20,
             ),
-
-            ft.NavigationDrawerDestination(
-                label="Chat",
-                icon=ft.Icons.CHAT,
-            ),
-
-            ft.NavigationDrawerDestination(
-                label="Settings",
-                icon=ft.Icons.SETTINGS,
-            ),
+            ft.NavigationDrawerDestination(label="Chat", icon=ft.Icons.CHAT),
+            ft.NavigationDrawerDestination(label="Settings", icon=ft.Icons.SETTINGS),
         ],
     )
-
-    # ==================================================
-    # GENERATION SETTINGS
-    # ==================================================
 
     gen_sett = ft.BottomSheet(
         fullscreen=True,
@@ -111,115 +55,58 @@ async def main(page: ft.Page):
             padding=20,
             content=ft.Column(
                 controls=[
-                    ft.Text(
-                        "Generation Settings",
-                        size=25,
-                        weight=ft.FontWeight.BOLD,
-                    ),
-
+                    ft.Text("Generation Settings", size=25, weight=ft.FontWeight.BOLD),
                     ft.Column(
                         controls=[
-                            ft.Text(
-                                "Creativity",
-                                size=20,
-                            ),
-
-                            ft.Text(
-                                "Choose how creative AI will be.",
-                                color=ft.Colors.SECONDARY,
-                            ),
-
+                            ft.Text("Creativity", size=20),
+                            ft.Text("Choose how creative AI will be.", color=ft.Colors.SECONDARY),
                             ft.SegmentedButton(
                                 selected=["normal"],
                                 segments=[
-                                    ft.Segment(
-                                        value="creative",
-                                        label="Creative",
-                                    ),
-
-                                    ft.Segment(
-                                        value="normal",
-                                        label="Normal",
-                                    ),
-
-                                    ft.Segment(
-                                        value="predictable",
-                                        label="Predictable",
-                                    ),
+                                    ft.Segment(value="creative", label="Creative"),
+                                    ft.Segment(value="normal", label="Normal"),
+                                    ft.Segment(value="predictable", label="Predictable"),
                                 ],
                                 allow_empty_selection=False,
                             ),
                         ],
                         spacing=2,
                     ),
-                ],
+                ]
             ),
         ),
     )
 
-    # ==================================================
-    # APP BAR
-    # ==================================================
-
     page.appbar = ft.AppBar(
-        leading=ft.IconButton(
-            ft.Icons.MENU,
-            on_click=show_drawer,
-        ),
+        leading=ft.IconButton(ft.Icons.MENU, on_click=show_drawer),
         title_spacing=0,
         visible=False,
         force_material_transparency=True,
         actions=[
-            new_chat_butt := ft.Button(
-                "New Chat",
-                icon=ft.Icons.ADD,
-            ),
-
+            new_chat_butt := ft.Button("New Chat", icon=ft.Icons.ADD),
             ft.PopupMenuButton(
                 key="popup",
                 items=[
                     ft.PopupMenuItem(
                         content=ft.Row(
-                            controls=[
-                                ft.Icon(
-                                    ft.Icons.AUTO_AWESOME
-                                ),
-                                ft.Text(
-                                    "Generation Settings"
-                                ),
-                            ],
+                            controls=[ft.Icon(ft.Icons.AUTO_AWESOME), ft.Text("Generation Settings")]
                         ),
-                        on_click=lambda e: page.show_dialog(
-                            gen_sett
-                        ),
-                    ),
+                        on_click=lambda e: page.show_dialog(gen_sett),
+                    )
                 ],
             ),
         ],
     )
-
-    # ==================================================
-    # MODEL DOWNLOAD UI
-    # ==================================================
-
-    download_text = ft.Text(
-        "Waiting to start",
-        size=15,
+    loading_page=ft.SafeArea(
+        content=ft.Container(
+            content=ft.Column(controls=[spins.FadingCircle(color=ft.Colors.PRIMARY, size=50), ft.Text("Loading...", size=20)], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            alignment=ft.Alignment.CENTER
+        ),
+        visible=True
     )
-
-    download_prog = ft.ProgressBar(
-        height=20,
-        border_radius=30,
-        value=0,
-    )
-
-    status_text = ft.Text(
-        "Download the AI model to get started.",
-        size=16,
-        selectable=True,
-    )
-
-    # These references are resolved when the button is clicked.
+    download_text = ft.Text("Waiting to start", size=15)
+    download_prog = ft.ProgressBar(height=20, border_radius=20, value=0)
+    status_text = ft.Text("Download the AI model to get started.", size=16, selectable=True)
     download_button = ft.OutlinedButton(
         "Download",
         icon=ft.Icons.DOWNLOAD,
@@ -236,87 +123,48 @@ async def main(page: ft.Page):
         ),
     )
 
+    
     download_page = ft.Container(
         content=ft.Card(
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Row(
-                            controls=[
-                                ft.Icon(
-                                    ft.Icons.DOWNLOAD
-                                ),
-
-                                ft.Text(
-                                    "Download AI model",
-                                    size=26,
-                                    weight=ft.FontWeight.BOLD,
-                                ),
-                            ],
-                        ),
-
+                        ft.Row(controls=[ft.Icon(ft.Icons.DOWNLOAD), ft.Text("Download AI model", size=30, weight=ft.FontWeight.BOLD)]),
                         status_text,
-
                         ft.Divider(),
-
                         download_text,
-
                         download_prog,
-
                         download_button,
                     ],
                     spacing=10,
                 ),
                 padding=20,
-            ),
+            )
         ),
         alignment=ft.Alignment.CENTER,
         expand=True,
-        visible=False,
+        visible=False
     )
 
-    # ==================================================
-    # CHAT INTRODUCTION
-    # ==================================================
     intro = ft.Container(
         content=ft.Column(
             controls=[
-                ft.Image(
-                    src="assets/icon.png",
-                    width=90,
-                    height=90,
-                    fit=ft.BoxFit.CONTAIN,
-                ),
-
-                ft.Text(
-                    "Feel the Aura",
-                    size=32,
-                    weight=ft.FontWeight.W_300,
-                    italic=True,
-                ),
+                ft.Image(src="assets/icon.png", width=90, height=90, fit=ft.BoxFit.CONTAIN),
+                ft.Text("Feel the Aura", size=32, weight=ft.FontWeight.W_300, italic=True),
             ],
-            horizontal_alignment=(
-                ft.CrossAxisAlignment.CENTER
-            ),
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=10,
         ),
         alignment=ft.Alignment.CENTER,
         expand=True,
     )
-
-    # ==================================================
-    # CHAT MESSAGES
-    # ==================================================
-
     chats = ft.Column(
         controls=[intro],
         scroll=ft.ScrollMode.AUTO,
         expand=True,
         spacing=15,
-        horizontal_alignment=(
-            ft.CrossAxisAlignment.STRETCH
-        ),
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
     )
 
     def intro_invisible():
@@ -326,19 +174,9 @@ async def main(page: ft.Page):
         if len(chats.controls) <= 1:
             intro.visible = True
 
-    # ==================================================
-    # MESSAGE INPUT
-    # ==================================================
-
     def send_message(e):
-        page.run_thread(
-            app.send,
-            e,
-            page,
-            inp,
-            intro,
-            chats,
-        )
+        # Use Flet's thread helper to run blocking model generation off the UI loop.
+        page.run_thread(app.send, e, page, inp, intro, chats)
 
     bottom_cont_row = ft.Row(
         controls=[
@@ -355,63 +193,28 @@ async def main(page: ft.Page):
                 filled=True,
                 border_radius=20,
             ),
-
-            ft.FilledIconButton(
-                ft.Icons.SEND,
-                on_click=send_message,
-            ),
+            ft.FilledIconButton(ft.Icons.SEND, on_click=send_message),
         ],
         spacing=0,
         alignment=ft.MainAxisAlignment.CENTER,
         vertical_alignment=ft.CrossAxisAlignment.END,
     )
-
-    # Floating-style input container.
-    # IMPORTANT: It is NOT absolutely positioned.
     bottom_cont = ft.Container(
         content=bottom_cont_row,
+        left=12,
+        right=12,
+        bottom=12,
         padding=8,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
         border_radius=30,
-        margin=ft.Margin(
-            left=2,
-            top=4,
-            right=2,
-            bottom=4,
-        ),
         visible=False,
     )
-
-    # ==================================================
-    # CHAT PAGE
-    # ==================================================
+    page.overlay.append(bottom_cont)
+    new_chat_butt.on_click = lambda e: app.new_chat(e, chats, intro)
 
     chat_page = ft.Container(
         content=ft.Column(
-            controls=[
-                # Message area takes the available space.
-                ft.Container(
-                    content=chats,
-                    expand=True,
-                    padding=ft.Padding(
-                        10,
-                        10,
-                        10,
-                        10,
-                    ),
-                ),
-
-                # Input stays inside the page layout.
-                # SafeArea handles the system navigation area.
-                ft.SafeArea(
-                    content=bottom_cont,
-                    avoid_intrusions_top=False,
-                    avoid_intrusions_left=False,
-                    avoid_intrusions_right=False,
-                    avoid_intrusions_bottom=True,
-                    maintain_bottom_view_padding=True,
-                ),
-            ],
+            controls=[ft.Container(content=chats, expand=True, padding=ft.Padding(10, 10, 10, 100))],
             spacing=0,
             expand=True,
         ),
@@ -420,262 +223,109 @@ async def main(page: ft.Page):
         padding=0,
     )
 
-    new_chat_butt.on_click = (
-        lambda e: app.new_chat(
-            e,
-            chats,
-            intro,
-        )
-    )
-
-    # ==================================================
-    # SETTINGS: THEME
-    # ==================================================
-
     theme_card = ft.Card(
         content=ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.DARK_MODE
-                            ),
-
-                            ft.Text(
-                                "Theme",
-                                size=24,
-                                weight=ft.FontWeight.W_500,
-                            ),
-                        ],
-                    ),
-
+                    ft.Row(controls=[ft.Icon(ft.Icons.DARK_MODE), ft.Text("Theme", size=20)]),
                     ft.Dropdown(
                         value=theme,
                         on_select=theme_change,
-                        options=[
-                            ft.dropdown.Option("SYSTEM"),
-                            ft.dropdown.Option("LIGHT"),
-                            ft.dropdown.Option("DARK"),
-                        ],
+                        options=[ft.dropdown.Option("SYSTEM"), ft.dropdown.Option("LIGHT"), ft.dropdown.Option("DARK")],
                         border_color=ft.Colors.SECONDARY,
+
                     ),
-                ],
-                spacing=12,
+                ]
             ),
             padding=20,
-        ),
+        )
     )
 
-    # ==================================================
-    # SETTINGS: SYSTEM MESSAGE
-    # ==================================================
+    async def change_sys_message(e):
+        value = sys_message.value or ""
+        await storage.set("sys_message", value)
+        app.SYSTEM_MESSAGE = value.strip() or "You are AuraIntelligence, a helpful assistant."
+        app.reset_history()
+        page.show_dialog(ft.SnackBar("System message saved. It will apply to new responses."))
+        page.update()
 
     sys_message = ft.TextField(
-        hint_text=(
-            "Tell the AI how to respond "
-            "or what context to use."
-        ),
+        hint_text="Tell the AI how to respond or what context to use.",
         multiline=True,
         max_lines=4,
         border_color=ft.Colors.SECONDARY,
         border_radius=20,
         value=system_message,
     )
-
-    status_saved = ft.Text(
-        size=13,
-        color=ft.Colors.SECONDARY,
-    )
-
-    async def change_sys_message(e):
-        value = sys_message.value or ""
-
-        await storage.set(
-            "sys_message",
-            value,
-        )
-
-        app.SYSTEM_MESSAGE = (
-            value.strip()
-            or "You are AuraIntelligence, a helpful assistant."
-        )
-
-        app.reset_history()
-
-        status_saved.value = (
-            "System message saved. "
-            "It will apply to new responses."
-        )
-
-        page.update()
-
     message_card = ft.Card(
         content=ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.MEMORY
-                            ),
-
-                            ft.Text(
-                                "System Message",
-                                size=24,
-                                weight=ft.FontWeight.W_500,
-                            ),
-                        ],
-                    ),
-
+                    ft.Row(controls=[ft.Icon(ft.Icons.MEMORY), ft.Text("System Message", size=20)]),
                     sys_message,
-
-                    ft.OutlinedButton(
-                        "Save",
-                        icon=ft.Icons.SAVE,
-                        on_click=change_sys_message,
-                    ),
-
-                    status_saved,
-                ],
-                spacing=12,
+                    ft.OutlinedButton("Save", icon=ft.Icons.SAVE, on_click=change_sys_message)
+                ]
             ),
             padding=20,
-        ),
+        )
     )
-
-    app.SYSTEM_MESSAGE = (
-        system_message.strip()
-        or "You are AuraIntelligence, a helpful assistant."
-    )
-
+    app.SYSTEM_MESSAGE = system_message.strip() or "You are AuraIntelligence, a helpful assistant."
     app.reset_history()
-
-    # ==================================================
-    # SETTINGS: ABOUT
-    # ==================================================
 
     about_card = ft.Card(
         content=ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Icon(
-                                ft.Icons.INFO
-                            ),
-
-                            ft.Text(
-                                "About",
-                                size=24,
-                                weight=ft.FontWeight.W_500,
-                            ),
-                        ],
-                    ),
-
+                    ft.Row(controls=[ft.Icon(ft.Icons.INFO), ft.Text("About", size=20)]),
                     ft.Markdown(
-                        "**Version:** 0.1.0\n\n"
-                        "**Contact and Feedback:** "
-                        "auraway.dev@gmail.com\n\n"
-                        "© 2026 [AuraWay]"
-                        "(https://aura-way.github.io)",
+                        "**Version:** 0.1.0\n\n**Contact and Feedback:** auraway.dev@gmail.com\n\n© 2026 [AuraWay](https://aura-way.github.io)",
                         selectable=True,
-                        on_tap_link=lambda e: page.run_task(
-                            open_link,
-                            e,
-                            e.data,
-                        ),
+                        on_tap_link=lambda e: page.run_task(open_link, e, e.data),
                     ),
-                ],
-                spacing=12,
+                ]
             ),
             padding=20,
-        ),
+        )
     )
-
-    # ==================================================
-    # SETTINGS PAGE
-    # ==================================================
-
     sett_page = ft.Container(
-        content=ft.Column(
-            controls=[
-                theme_card,
-                message_card,
-                about_card,
-            ],
-            spacing=12,
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
-        ),
+        content=ft.Column(controls=[theme_card, message_card, about_card]),
         visible=False,
-        expand=True,
     )
 
-    # ==================================================
-    # INITIALIZE APP
-    # ==================================================
-
+    # Add pages before attempting model load so the UI can still be displayed if loading fails.
     page.add(
-        download_page,
-        chat_page,
-        sett_page,
+        ft.SafeArea(
+            expand=True,
+            content=ft.Column(
+                controls=[loading_page,download_page, chat_page, sett_page]
+            )
+        )
     )
-
-    # ==================================================
-    # LOAD EXISTING MODEL
-    # ==================================================
-
     try:
-        if (
-            os.path.isfile(app.MODEL_PATH)
-            and os.path.getsize(app.MODEL_PATH) > 0
-        ):
-            status_text.value = (
-                "Model found. Loading…"
-            )
-
-            download_page.visible = True
+        if os.path.isfile(app.MODEL_PATH) and os.path.getsize(app.MODEL_PATH) > 0:
+            status_text.value = "Model found. Loading…"
             page.update()
-
-            await asyncio.to_thread(
-                app.load_model,
-                app.MODEL_PATH,
-            )
-
+            await asyncio.to_thread(app.load_model, app.MODEL_PATH)
             download_page.visible = False
+            loading_page.visible=False
             chat_page.visible = True
             bottom_cont.visible = True
             page.appbar.visible = True
-
             status_text.value = "Model ready."
-
         else:
             download_page.visible = True
+            loading_page.visible=False
             chat_page.visible = False
             bottom_cont.visible = False
-
     except Exception as exc:
-        print(
-            f"Existing model could not be loaded: {exc}"
-        )
-
-        status_text.value = (
-            f"The existing model could not be loaded: "
-            f"{exc}. Download it again."
-        )
-
+        print(f"Existing model could not be loaded: {exc}")
+        status_text.value = f"The existing model could not be loaded: {exc}. Download it again."
         download_page.visible = True
         chat_page.visible = False
         bottom_cont.visible = False
         download_button.disabled = False
-
     page.update()
 
-
-# ======================================================
-# RUN APP
-# ======================================================
 
 if __name__ == "__main__":
     ft.run(main)
