@@ -214,7 +214,7 @@ async def download_model(
         page.update()
     except Exception as exc:
         print(f"Model download/load error: {exc}")
-        status_text.value = f"Could not download or load the model: {exc}"
+        status_text.value = f"Could not download or load the model."
         download_button.disabled = False
         download_prog.value = 0
         page.update()
