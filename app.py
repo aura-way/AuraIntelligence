@@ -71,7 +71,7 @@ class Query(ft.Container):
     def init(self):
         self.content = ft.Column(
             controls=[
-                ft.Text(self.body, size=18, selectable=True),
+                ft.Text(self.body, size=15, selectable=True),
                 ft.Row(
                     controls=[
                         ft.IconButton(ft.Icons.COPY, on_click=self.copy_query),
