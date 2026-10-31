@@ -99,10 +99,13 @@ async def main(page: ft.Page):
     )
     loading_page=ft.SafeArea(
         content=ft.Container(
-            content=ft.Column(controls=[spins.FadingCircle(color=ft.Colors.PRIMARY, size=50), ft.Text("Loading...", size=20)], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            alignment=ft.Alignment.CENTER
+            content=ft.Column(controls=[spins.Wave(color=ft.Colors.PRIMARY, size=60), ft.Text("Loading...", size=20)], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            alignment=ft.Alignment.CENTER,
+            align=ft.Alignment.CENTER,
+            expand=True
         ),
-        visible=True
+        visible=True,
+        expand=True
     )
     download_text = ft.Text("Waiting to start", size=15)
     download_prog = ft.ProgressBar(height=20, border_radius=20, value=0)
@@ -149,8 +152,8 @@ async def main(page: ft.Page):
     intro = ft.Container(
         content=ft.Column(
             controls=[
-                ft.Image(src="assets/icon.png", width=90, height=90, fit=ft.BoxFit.CONTAIN),
-                ft.Text("Feel the Aura", size=32, weight=ft.FontWeight.W_300, italic=True),
+                ft.Image(src="icon.png", width=90, height=90, fit=ft.BoxFit.CONTAIN),
+                ft.Text("Welcome Back !", size=32, weight=ft.FontWeight.W_300, italic=True),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,
@@ -192,6 +195,7 @@ async def main(page: ft.Page):
                 border_color=ft.Colors.SECONDARY,
                 filled=True,
                 border_radius=20,
+                dense=True
             ),
             ft.FilledIconButton(ft.Icons.SEND, on_click=send_message),
         ],
@@ -199,14 +203,16 @@ async def main(page: ft.Page):
         alignment=ft.MainAxisAlignment.CENTER,
         vertical_alignment=ft.CrossAxisAlignment.END,
     )
-    bottom_cont = ft.Container(
+    bottom_bar = ft.Container(
         content=bottom_cont_row,
-        left=12,
-        right=12,
-        bottom=12,
+        margin=ft.Margin.only(left=12, right=12, bottom=12),
         padding=8,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
         border_radius=30,
+    )
+    bottom_cont = ft.SafeArea(
+        content=bottom_bar,
+        left=0, right=0, bottom=0,
         visible=False,
     )
     page.overlay.append(bottom_cont)
