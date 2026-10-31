@@ -24,18 +24,24 @@ module = "main"
 legacy_packaging = true
 target_arch = ["arm64-v8a"]
 
+
 [tool.flet.boot_screen]
 name = "spinkit"
 
 [tool.flet.boot_screen.spinkit]
-spinner = "Wave"
-spinner_color_light = "#0BC3E6"
-spinner_color_dark = "#0BC3E6"
+spinner = "SpinningLines"
 spinner_size = 65
-bgcolor_light = "#FFFFFF"
-bgcolor_dark = "#000000"
-text_color_light = "#1565C0"
-text_color_dark = "#0BC3E6"
+
+# Light theme
+bgcolor_light = "#FAF9FD"
+spinner_color_light = "#3F5F90"
+text_color_light = "#3F5F90"
+
+# Dark theme (matches your chat screen)
+bgcolor_dark = "#111318"
+spinner_color_dark = "#A8C7FA"
+text_color_dark = "#A8C7FA"
+
 prepare_message = "Preparing AuraIntelligence..."
 startup_message = "Awakening AuraIntelligence..."
 fade_out_duration = 350
