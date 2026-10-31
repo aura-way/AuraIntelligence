@@ -132,7 +132,7 @@ async def main(page: ft.Page):
             content=ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Row(controls=[ft.Icon(ft.Icons.DOWNLOAD), ft.Text("Download AI model", size=30, weight=ft.FontWeight.BOLD)]),
+                        ft.Row(controls=[ft.Icon(ft.Icons.DOWNLOAD), ft.Text("Download AI model", size=20, weight=ft.FontWeight.BOLD)]),
                         status_text,
                         ft.Divider(),
                         download_text,
@@ -152,7 +152,7 @@ async def main(page: ft.Page):
     intro = ft.Container(
         content=ft.Column(
             controls=[
-                ft.Image(src="icon.png", width=90, height=90, fit=ft.BoxFit.CONTAIN),
+                ft.Image(src="icon.png", width=150, height=150, fit=ft.BoxFit.CONTAIN),
                 ft.Text("Welcome Back !", size=32, weight=ft.FontWeight.W_300, italic=True),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -195,13 +195,12 @@ async def main(page: ft.Page):
                 border_color=ft.Colors.SECONDARY,
                 filled=True,
                 border_radius=20,
-                dense=True
             ),
             ft.FilledIconButton(ft.Icons.SEND, on_click=send_message),
         ],
         spacing=0,
         alignment=ft.MainAxisAlignment.CENTER,
-        vertical_alignment=ft.CrossAxisAlignment.END,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
     bottom_bar = ft.Container(
         content=bottom_cont_row,
@@ -209,6 +208,7 @@ async def main(page: ft.Page):
         padding=8,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
         border_radius=30,
+        alignment=ft.Alignment.CENTER
     )
     bottom_cont = ft.SafeArea(
         content=bottom_bar,
@@ -334,4 +334,4 @@ async def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(main, no_cdn=True)
